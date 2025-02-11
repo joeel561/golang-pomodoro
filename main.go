@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const timeout = time.Second * 2
+const timeout = time.Second * 20
 const breakTime = time.Minute * 5
 
 var percent float64 = 0.0
@@ -62,7 +62,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		elapsed := time.Since(start)
 		percent = (elapsed.Seconds() / timeout.Seconds())
 
-		fmt.Println(percent)
+                //fmt.Println(percent)
 
 		progressCmd := m.progress.SetPercent(float64(percent))
 		return m, tea.Batch(tickCmd(), cmd, progressCmd)
@@ -76,7 +76,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case timer.TimeoutMsg:
 		var cmd tea.Cmd
-		percent = 0.0
 		m.timer, cmd = m.timer.Update(msg)
 		m.quitting = true
 		m.keymap.stop.SetEnabled(m.timer.Running())
@@ -89,13 +88,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keymap.reset):
+			// Stop and reinitialize the Timer
+			m.timer.Stop()
+			m.Init()
+
 			m.timer.Timeout = timeout
 			percent = 0.0
 			start = time.Now()
 
 			m.keymap.start.SetEnabled(false)
 
-			return m, m.timer.Stop()
+			return m, nil
 		case key.Matches(msg, m.keymap.start, m.keymap.stop):
 			return m, m.timer.Toggle()
 		case key.Matches(msg, m.keymap.pauseTimer):
@@ -150,7 +153,7 @@ func (m model) View() string {
 		PaddingTop(1)
 
 	s += m.helpView()
-	prog := m.progress.View()
+	prog := m.progress.ViewAs(percent)
 
 	return style.Render(prog + s)
 }
