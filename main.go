@@ -13,19 +13,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const timeout = time.Second * 2
-const breakTime = time.Minute * 5
+var timeout = time.Minute * 25
 
 var percent float64 = 0.0
-
-var start = time.Now()
 
 const (
 	padding  = 2
 	maxWidth = 80
 )
-
-var progressHelpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render
 
 type model struct {
 	timer    timer.Model
@@ -48,8 +43,8 @@ type keymap struct {
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
-		m.timer.Init(),
 		tickCmd(),
+		m.timer.Stop(),
 	)
 }
 
@@ -57,15 +52,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case timer.TickMsg:
 		var cmd tea.Cmd
-		m.timer, cmd = m.timer.Update(msg)
-
-		elapsed := time.Since(start)
-		percent = (elapsed.Seconds() / timeout.Seconds())
-
-		fmt.Println(percent)
+		percent = ((timeout.Seconds() - m.timer.Timeout.Seconds()) / timeout.Seconds())
 
 		progressCmd := m.progress.SetPercent(float64(percent))
-		return m, tea.Batch(tickCmd(), cmd, progressCmd)
+		m.timer, cmd = m.timer.Update(msg)
+
+		return m, tea.Batch(progressCmd, cmd)
 
 	case timer.StartStopMsg:
 		var cmd tea.Cmd
@@ -76,7 +68,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case timer.TimeoutMsg:
 		var cmd tea.Cmd
-		percent = 0.0
 		m.timer, cmd = m.timer.Update(msg)
 		m.quitting = true
 		m.keymap.stop.SetEnabled(m.timer.Running())
@@ -89,21 +80,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keymap.reset):
-			m.timer.Timeout = timeout
-			percent = 0.0
-			start = time.Now()
+			progressCmd := m.progress.SetPercent(0.0)
+			m.timer = timer.New(timeout)
 
-			m.keymap.start.SetEnabled(false)
+			m.keymap.start.SetEnabled(true)
 
-			return m, m.timer.Stop()
+			return m, tea.Batch(progressCmd, m.timer.Stop())
 		case key.Matches(msg, m.keymap.start, m.keymap.stop):
 			return m, m.timer.Toggle()
 		case key.Matches(msg, m.keymap.pauseTimer):
-			m.timer.Timeout = breakTime
-			return m, m.timer.Start()
+			progressCmd := m.progress.SetPercent(0.0)
+			m.timer = timer.New(timeout)
+			timeout = time.Minute * 5
+			return m, tea.Batch(progressCmd, m.timer.Start())
 		case key.Matches(msg, m.keymap.workTimer):
-			m.timer.Timeout = timeout
-			return m, m.timer.Start()
+			progressCmd := m.progress.SetPercent(0.0)
+			timeout = time.Minute * 25
+			m.timer = timer.New(timeout)
+			return m, tea.Batch(progressCmd, m.timer.Start())
 		}
 
 	case progress.FrameMsg:
@@ -147,12 +141,25 @@ func (m model) View() string {
 		BorderForeground(lipgloss.Color("#7D56F4")).
 		PaddingLeft(1).
 		PaddingRight(1).
-		PaddingTop(1)
+		PaddingTop(1).
+		BorderTop(false).
+		BorderBottom(true).
+		BorderLeft(false).
+		BorderRight(false)
 
-	s += m.helpView()
-	prog := m.progress.View()
+	var textStyle = lipgloss.NewStyle().
+		Bold(true).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("#7D56F4")).
+		PaddingLeft(2).
+		Width(82).
+		PaddingBottom(1).
+		BorderTop(true).
+		Foreground(lipgloss.Color("63"))
 
-	return style.Render(prog + s)
+	prog := m.progress.View() + m.helpView()
+
+	return (textStyle.Render(s) + style.Render(prog))
 }
 
 func tickCmd() tea.Cmd {
@@ -163,7 +170,7 @@ func tickCmd() tea.Cmd {
 
 func main() {
 	m := model{
-		timer: timer.NewWithInterval(timeout, time.Second),
+		timer: timer.New(timeout),
 		progress: progress.New(progress.WithDefaultGradient(),
 			progress.WithWidth(40),
 			progress.WithoutPercentage()),
@@ -196,8 +203,7 @@ func main() {
 		help: help.New(),
 	}
 
-	fmt.Println(timeout.Seconds(), "elapsed")
-	m.keymap.start.SetEnabled(false)
+	m.keymap.stop.SetEnabled(false)
 
 	if _, err := tea.NewProgram(m).Run(); err != nil {
 		fmt.Println("Uh oh, we encountered an error:", err)
