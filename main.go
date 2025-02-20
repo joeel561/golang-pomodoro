@@ -90,8 +90,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.timer.Toggle()
 		case key.Matches(msg, m.keymap.pauseTimer):
 			progressCmd := m.progress.SetPercent(0.0)
-			m.timer = timer.New(timeout)
 			timeout = time.Minute * 5
+			m.timer = timer.New(timeout)
 			return m, tea.Batch(progressCmd, m.timer.Start())
 		case key.Matches(msg, m.keymap.workTimer):
 			progressCmd := m.progress.SetPercent(0.0)
